@@ -3,97 +3,139 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flappy Baby - Mini Arcade</title>
+  <title>Crawling Baby - Mini Arcade</title>
   <link rel="stylesheet" href="../style.css">
 </head>
 <body class="game-body">
   <a href="../index.html" class="back-link">← Back to games</a>
   <canvas id="game" width="400" height="500"></canvas>
-  <p class="hint">Click or press Space to bounce. Grab bottles for bonus points! 🍼</p>
+  <p class="hint">Space / Click / ↑ to jump, ↓ to duck. Grab bottles for bonus points! 🍼</p>
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
 
     // Game constants
-    const GRAVITY = 0.5;
-    const FLAP = -8;
-    const GATE_WIDTH = 60;
-    const GATE_GAP = 170;
-    const GATE_SPACING = 220;
-    const GATE_SPEED = 2.5;
+    const GRAVITY = 0.7;
+    const JUMP = -13;
+    const FLOOR_Y = canvas.height - 60;
+    const SPEED = 3.5;
+    const OBSTACLE_SPACING = 260;
     const BABY_X = 80;
-    const BABY_SIZE = 34; // emoji font size, used for hitbox too
-    const BABY_R = BABY_SIZE / 2;
+    const BABY_SIZE = 34;      // emoji font size, used for hitbox too
+    const DUCK_SIZE = 22;      // smaller hitbox while ducking
     const BOTTLE_R = 12;
 
+    // Obstacle types
+    const TABLE = { w: 46, h: 52, kind: 'table' };   // jump over
+    const GATE = { w: 34, kind: 'gate' };            // duck under (hovers above floor)
+    const GATE_CLEARANCE = 30;                       // gap between floor and gate bottom
+
     // Game state
-    let baby, gates, bottles, score, best = 0;
+    let baby, obstacles, bottles, score, best = 0;
     let state = 'start'; // start → playing → over
 
     function reset() {
-      baby = { y: canvas.height / 2, vy: 0 };
-      gates = [];
+      baby = { y: FLOOR_Y, vy: 0, ducking: false };
+      obstacles = [];
       bottles = [];
       score = 0;
     }
 
-    function flap() {
-      if (state === 'start') {
+    function startOrRestart() {
+      if (state === 'start' || state === 'over') {
         state = 'playing';
         reset();
-        baby.vy = FLAP;
-      } else if (state === 'playing') {
-        baby.vy = FLAP;
-      } else if (state === 'over') {
-        state = 'start';
       }
     }
 
-    canvas.addEventListener('click', flap);
+    function jump() {
+      if (state !== 'playing') return startOrRestart();
+      if (baby.y >= FLOOR_Y) {
+        baby.ducking = false;
+        baby.vy = JUMP;
+      }
+    }
+
+    function setDuck(on) {
+      if (state !== 'playing') return;
+      baby.ducking = on && baby.y >= FLOOR_Y;
+    }
+
+    canvas.addEventListener('mousedown', jump);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
     document.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
         e.preventDefault();
-        flap();
+        jump();
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        setDuck(true);
       }
     });
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'ArrowDown') setDuck(false);
+    });
 
-    function spawnGate() {
-      const gapY = 80 + Math.random() * (canvas.height - 160 - GATE_GAP);
-      gates.push({ x: canvas.width, gapY });
-      // Place a bottle in the middle of some gaps
-      if (Math.random() < 0.5) {
-        bottles.push({ x: canvas.width + GATE_WIDTH / 2, y: gapY + GATE_GAP / 2 });
+    function spawnObstacle() {
+      const isGate = Math.random() < 0.5;
+      if (isGate) {
+        obstacles.push({ x: canvas.width, ...GATE, y: FLOOR_Y - GATE_CLEARANCE - 110, h: 110 });
+      } else {
+        obstacles.push({ x: canvas.width, ...TABLE, y: FLOOR_Y - TABLE.h });
       }
+      // Occasionally float a bottle above the floor between obstacles
+      if (Math.random() < 0.4) {
+        bottles.push({
+          x: canvas.width + OBSTACLE_SPACING / 2,
+          y: FLOOR_Y - 40 - Math.random() * 60,
+        });
+      }
+    }
+
+    function babyHitbox() {
+      const size = baby.ducking ? DUCK_SIZE : BABY_SIZE;
+      return {
+        left: BABY_X - size / 2,
+        right: BABY_X + size / 2,
+        top: baby.y - size,
+        bottom: baby.y,
+      };
     }
 
     function update() {
       if (state !== 'playing') return;
 
-      // Baby physics
+      // Baby physics (jump arc, always returns to floor)
       baby.vy += GRAVITY;
       baby.y += baby.vy;
-
-      // Spawn gates
-      if (gates.length === 0 || gates[gates.length - 1].x < canvas.width - GATE_SPACING) {
-        spawnGate();
+      if (baby.y > FLOOR_Y) {
+        baby.y = FLOOR_Y;
+        baby.vy = 0;
       }
 
-      // Move gates + score
-      for (const gate of gates) {
-        gate.x -= GATE_SPEED;
-        if (!gate.scored && gate.x + GATE_WIDTH < BABY_X) {
-          gate.scored = true;
+      // Spawn obstacles
+      if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPACING) {
+        spawnObstacle();
+      }
+
+      // Move obstacles + score
+      for (const ob of obstacles) {
+        ob.x -= SPEED;
+        if (!ob.scored && ob.x + ob.w < BABY_X) {
+          ob.scored = true;
           score++;
         }
       }
-      gates = gates.filter(g => g.x + GATE_WIDTH > 0);
+      obstacles = obstacles.filter(o => o.x + o.w > 0);
 
       // Move bottles + collect (bonus point)
       for (const bottle of bottles) {
-        bottle.x -= GATE_SPEED;
-        const dx = bottle.x - BABY_X;
-        const dy = bottle.y - baby.y;
-        if (Math.hypot(dx, dy) < BABY_R + BOTTLE_R) {
+        bottle.x -= SPEED;
+        const hb = babyHitbox();
+        if (
+          bottle.x + BOTTLE_R > hb.left && bottle.x - BOTTLE_R < hb.right &&
+          bottle.y + BOTTLE_R > hb.top && bottle.y - BOTTLE_R < hb.bottom
+        ) {
           bottle.collected = true;
           score++;
         }
@@ -101,12 +143,12 @@
       bottles = bottles.filter(b => !b.collected && b.x + BOTTLE_R > 0);
 
       // Collisions
-      const floor = canvas.height - BABY_R;
-      if (baby.y > floor || baby.y < BABY_R) return gameOver();
-      for (const gate of gates) {
-        const inX = BABY_X + BABY_R > gate.x && BABY_X - BABY_R < gate.x + GATE_WIDTH;
-        const inGap = baby.y - BABY_R > gate.gapY && baby.y + BABY_R < gate.gapY + GATE_GAP;
-        if (inX && !inGap) return gameOver();
+      const hb = babyHitbox();
+      for (const ob of obstacles) {
+        const hit =
+          hb.right > ob.x && hb.left < ob.x + ob.w &&
+          hb.bottom > ob.y && hb.top < ob.y + ob.h;
+        if (hit) return gameOver();
       }
     }
 
@@ -120,11 +162,33 @@
       ctx.fillStyle = '#0f3460';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Baby gates
-      ctx.fillStyle = '#e0b088';
-      for (const gate of gates) {
-        ctx.fillRect(gate.x, 0, GATE_WIDTH, gate.gapY);
-        ctx.fillRect(gate.x, gate.gapY + GATE_GAP, GATE_WIDTH, canvas.height - gate.gapY - GATE_GAP);
+      // Floor
+      ctx.fillStyle = '#16213e';
+      ctx.fillRect(0, FLOOR_Y, canvas.width, canvas.height - FLOOR_Y);
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, FLOOR_Y);
+      ctx.lineTo(canvas.width, FLOOR_Y);
+      ctx.stroke();
+
+      // Obstacles
+      for (const ob of obstacles) {
+        if (ob.kind === 'table') {
+          // Wooden table: top + legs
+          ctx.fillStyle = '#e0b088';
+          ctx.fillRect(ob.x, ob.y, ob.w, 10);
+          ctx.fillRect(ob.x + 4, ob.y + 10, 6, ob.h - 10);
+          ctx.fillRect(ob.x + ob.w - 10, ob.y + 10, 6, ob.h - 10);
+        } else {
+          // Baby gate hovering above the floor
+          ctx.fillStyle = '#e0b088';
+          ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+          ctx.fillStyle = '#0f3460';
+          for (let y = ob.y + 10; y < ob.y + ob.h - 8; y += 16) {
+            ctx.fillRect(ob.x + 4, y, ob.w - 8, 6);
+          }
+        }
       }
 
       // Bottles
@@ -135,9 +199,17 @@
         ctx.fillText('🍼', bottle.x, bottle.y);
       }
 
-      // Baby
+      // Baby (squashed while ducking = crawling low)
       ctx.font = `${BABY_SIZE}px "Segoe UI", sans-serif`;
-      ctx.fillText('👶', BABY_X, baby.y);
+      if (baby.ducking) {
+        ctx.save();
+        ctx.translate(BABY_X, baby.y - DUCK_SIZE / 2);
+        ctx.scale(1, 0.65);
+        ctx.fillText('👶', 0, 0);
+        ctx.restore();
+      } else {
+        ctx.fillText('👶', BABY_X, baby.y - BABY_SIZE / 2);
+      }
 
       // Score
       ctx.fillStyle = 'white';
