@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baby Play Area - Mini Arcade</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="game-body">
+  <a href="../index.html" class="back-link">← Back to games</a>
+  <canvas id="game" width="700" height="440"></canvas>
+  <p class="hint">← → move, Space / ↑ jump over furniture. Collect all the toys! 🧸</p>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game constants
+    const GRAVITY = 0.7;
+    const JUMP = -13;
+    const MOVE_SPEED = 4;
+    const FLOOR_Y = canvas.height - 50;
+    const BABY_W = 34;
+    const BABY_H = 34;
+
+    // Obstacles (furniture to climb over)
+    const OBSTACLES = [
+      { x: 130, w: 60, h: 45, label: '🛋️' },  // couch
+      { x: 300, w: 50, h: 70, label: '🪑' },  // chair stack
+      { x: 440, w: 70, h: 35, label: '📦' },  // toy box
+      { x: 580, w: 45, h: 55, label: '🛏️' },  // bed
+    ];
+
+    // Toys to collect (some up high, need jumping off furniture)
+    const TOYS_START = [
+      { x: 60, y: FLOOR_Y - 15, emoji: '🧸' },
+      { x: 160, y: FLOOR_Y - 45 - 20, emoji: '🚗' },   // on the couch
+      { x: 325, y: FLOOR_Y - 70 - 20, emoji: '⚽' },   // on the chair
+      { x: 475, y: FLOOR_Y - 35 - 20, emoji: '🪀' },   // on the toy box
+      { x: 600, y: FLOOR_Y - 55 - 20, emoji: '🦆' },   // on the bed
+      { x: 660, y: FLOOR_Y - 15, emoji: '🎈' },
+    ];
+    const TOY_R = 14;
+
+    // Game state
+    let baby, toys, collected, timeLeft, lastTime;
+    let state = 'start'; // start → playing → won → lost
+    const keys = {};
+
+    function reset() {
+      baby = { x: 30, y: FLOOR_Y - BABY_H, vy: 0, onGround: true };
+      toys = TOYS_START.map(t => ({ ...t }));
+      collected = 0;
+      timeLeft = 60;
+      lastTime = null;
+    }
+
+    function startOrRestart() {
+      if (state !== 'playing') {
+        reset();
+        state = 'playing';
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+      keys[e.code] = true;
+      if (state !== 'playing' && (e.code === 'Space' || e.code === 'Enter')) startOrRestart();
+    });
+    document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+    canvas.addEventListener('click', startOrRestart);
+
+    function babyBox() {
+      return { left: baby.x, right: baby.x + BABY_W, top: baby.y, bottom: baby.y + BABY_H };
+    }
+
+    function update(dt) {
+      if (state !== 'playing') return;
+
+      // Timer
+      timeLeft -= dt;
+      if (timeLeft <= 0) {
+        timeLeft = 0;
+        state = 'lost';
+        return;
+      }
+
+      // Horizontal movement
+      if (keys['ArrowLeft']) baby.x -= MOVE_SPEED;
+      if (keys['ArrowRight']) baby.x += MOVE_SPEED;
+      baby.x = Math.max(0, Math.min(canvas.width - BABY_W, baby.x));
+
+      // Jump
+      if ((keys['Space'] || keys['ArrowUp']) && baby.onGround) {
+        baby.vy = JUMP;
+        baby.onGround = false;
+      }
+
+      // Gravity
+      baby.vy += GRAVITY;
+      baby.y += baby.vy;
+
+      // Land on floor
+      if (baby.y + BABY_H >= FLOOR_Y) {
+        baby.y = FLOOR_Y - BABY_H;
+        baby.vy = 0;
+        baby.onGround = true;
+      }
+
+      // Furniture collisions: land on top, block from sides
+      const bb = babyBox();
+      for (const ob of OBSTACLES) {
+        const top = FLOOR_Y - ob.h;
+        const overlapX = bb.right > ob.x && bb.left < ob.x + ob.w;
+        if (!overlapX) continue;
+
+        const falling = baby.vy >= 0;
+        const feetNearTop = bb.bottom <= top + 12;
+        if (falling && feetNearTop && bb.bottom > top) {
+          // Land on top
+          baby.y = top - BABY_H;
+          baby.vy = 0;
+          baby.onGround = true;
+        } else if (bb.bottom > top + 12 && bb.top < FLOOR_Y) {
+          // Push out sideways
+          if (baby.x + BABY_W / 2 < ob.x + ob.w / 2) {
+            baby.x = ob.x - BABY_W;
+          } else {
+            baby.x = ob.x + ob.w;
+          }
+        }
+      }
+
+      // Collect toys
+      const cx = baby.x + BABY_W / 2;
+      const cy = baby.y + BABY_H / 2;
+      for (const toy of toys) {
+        if (!toy.got && Math.hypot(toy.x - cx, toy.y - cy) < TOY_R + BABY_W / 2) {
+          toy.got = true;
+          collected++;
+        }
+      }
+      if (collected === toys.length) state = 'won';
+    }
+
+    function draw() {
+      // Room
+      ctx.fillStyle = '#0f3460';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Floor
+      ctx.fillStyle = '#16213e';
+      ctx.fillRect(0, FLOOR_Y, canvas.width, canvas.height - FLOOR_Y);
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, FLOOR_Y);
+      ctx.lineTo(canvas.width, FLOOR_Y);
+      ctx.stroke();
+
+      // Furniture
+      ctx.font = '36px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      for (const ob of OBSTACLES) {
+        ctx.fillStyle = '#1d2d50';
+        ctx.fillRect(ob.x, FLOOR_Y - ob.h, ob.w, ob.h);
+        ctx.strokeStyle = '#e0b088';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(ob.x, FLOOR_Y - ob.h, ob.w, ob.h);
+        ctx.fillText(ob.label, ob.x + ob.w / 2, FLOOR_Y - ob.h - 6);
+      }
+
+      // Toys
+      ctx.font = `${TOY_R * 2}px "Segoe UI", sans-serif`;
+      ctx.textBaseline = 'middle';
+      for (const toy of toys) {
+        if (!toy.got) ctx.fillText(toy.emoji, toy.x, toy.y);
+      }
+
+      // Baby
+      ctx.font = `${BABY_W}px "Segoe UI", sans-serif`;
+      ctx.fillText('👶', baby.x + BABY_W / 2, baby.y + BABY_H / 2);
+
+      // HUD
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 20px "Segoe UI", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(`🧸 ${collected}/${toys.length}`, 12, 30);
+      ctx.textAlign = 'right';
+      ctx.fillText(`⏱️ ${Math.ceil(timeLeft)}s`, canvas.width - 12, 30);
+
+      // Overlays
+      ctx.textAlign = 'center';
+      if (state === 'start') {
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText('Collect all the toys before nap time!', canvas.width / 2, canvas.height / 2 - 50);
+        ctx.fillText('Click or press Space to start', canvas.width / 2, canvas.height / 2 - 10);
+      } else if (state === 'won') {
+        ctx.font = 'bold 32px "Segoe UI", sans-serif';
+        ctx.fillText('🎉 All toys collected!', canvas.width / 2, canvas.height / 2 - 40);
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText('Click or press Space to play again', canvas.width / 2, canvas.height / 2);
+      } else if (state === 'lost') {
+        ctx.font = 'bold 32px "Segoe UI", sans-serif';
+        ctx.fillText('😴 Nap time!', canvas.width / 2, canvas.height / 2 - 40);
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText(`You found ${collected}/${toys.length} toys`, canvas.width / 2, canvas.height / 2);
+        ctx.fillText('Click or press Space to try again', canvas.width / 2, canvas.height / 2 + 30);
+      }
+    }
+
+    function loop(timestamp) {
+      if (lastTime === null) lastTime = timestamp;
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+      lastTime = timestamp;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    reset();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
