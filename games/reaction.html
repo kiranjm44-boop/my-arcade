@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reaction Test - Mini Arcade</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="game-body">
+  <a href="../index.html" class="back-link">← Back to games</a>
+  <div id="box" class="reaction-box">
+    <p id="message">Click to start</p>
+  </div>
+  <script>
+    const box = document.getElementById('box');
+    const message = document.getElementById('message');
+    let state = 'idle'; // idle → waiting → ready → result
+    let timeout, startTime;
+
+    box.addEventListener('click', () => {
+      if (state === 'idle' || state === 'result') {
+        state = 'waiting';
+        box.style.background = '#e94560';
+        message.textContent = 'Wait for green...';
+        timeout = setTimeout(() => {
+          state = 'ready';
+          box.style.background = '#16c79a';
+          message.textContent = 'CLICK NOW!';
+          startTime = performance.now();
+        }, 1000 + Math.random() * 3000);
+      } else if (state === 'waiting') {
+        clearTimeout(timeout);
+        state = 'result';
+        box.style.background = '#16213e';
+        message.textContent = 'Too soon! Click to try again.';
+      } else if (state === 'ready') {
+        const time = Math.round(performance.now() - startTime);
+        state = 'result';
+        box.style.background = '#16213e';
+        message.textContent = `${time} ms — Click to play again`;
+      }
+    });
+  </script>
+</body>
+</html>

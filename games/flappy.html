@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flappy - Mini Arcade</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="game-body">
+  <a href="../index.html" class="back-link">← Back to games</a>
+  <canvas id="game" width="400" height="500"></canvas>
+  <p class="hint">Click or press Space to flap</p>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game constants
+    const GRAVITY = 0.5;
+    const FLAP = -8;
+    const PIPE_WIDTH = 60;
+    const PIPE_GAP = 150;
+    const PIPE_SPACING = 220;
+    const PIPE_SPEED = 2.5;
+    const BIRD_X = 80;
+    const BIRD_R = 14;
+
+    // Game state
+    let bird, pipes, score, best = 0;
+    let state = 'start'; // start → playing → over
+
+    function reset() {
+      bird = { y: canvas.height / 2, vy: 0 };
+      pipes = [];
+      score = 0;
+    }
+
+    function flap() {
+      if (state === 'start') {
+        state = 'playing';
+        reset();
+        bird.vy = FLAP;
+      } else if (state === 'playing') {
+        bird.vy = FLAP;
+      } else if (state === 'over') {
+        state = 'start';
+      }
+    }
+
+    canvas.addEventListener('click', flap);
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        flap();
+      }
+    });
+
+    function spawnPipe() {
+      const gapY = 80 + Math.random() * (canvas.height - 160 - PIPE_GAP);
+      pipes.push({ x: canvas.width, gapY });
+    }
+
+    function update() {
+      if (state !== 'playing') return;
+
+      // Bird physics
+      bird.vy += GRAVITY;
+      bird.y += bird.vy;
+
+      // Spawn pipes
+      if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - PIPE_SPACING) {
+        spawnPipe();
+      }
+
+      // Move pipes + score
+      for (const pipe of pipes) {
+        pipe.x -= PIPE_SPEED;
+        if (!pipe.scored && pipe.x + PIPE_WIDTH < BIRD_X) {
+          pipe.scored = true;
+          score++;
+        }
+      }
+      pipes = pipes.filter(p => p.x + PIPE_WIDTH > 0);
+
+      // Collisions
+      const floor = canvas.height - BIRD_R;
+      if (bird.y > floor || bird.y < BIRD_R) return gameOver();
+      for (const pipe of pipes) {
+        const inX = BIRD_X + BIRD_R > pipe.x && BIRD_X - BIRD_R < pipe.x + PIPE_WIDTH;
+        const inGap = bird.y - BIRD_R > pipe.gapY && bird.y + BIRD_R < pipe.gapY + PIPE_GAP;
+        if (inX && !inGap) return gameOver();
+      }
+    }
+
+    function gameOver() {
+      state = 'over';
+      best = Math.max(best, score);
+    }
+
+    function draw() {
+      // Sky
+      ctx.fillStyle = '#0f3460';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Pipes
+      ctx.fillStyle = '#16c79a';
+      for (const pipe of pipes) {
+        ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY);
+        ctx.fillRect(pipe.x, pipe.gapY + PIPE_GAP, PIPE_WIDTH, canvas.height - pipe.gapY - PIPE_GAP);
+      }
+
+      // Bird
+      ctx.fillStyle = '#e94560';
+      ctx.beginPath();
+      ctx.arc(BIRD_X, bird.y, BIRD_R, 0, Math.PI * 2);
+      ctx.fill();
+      // Eye
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(BIRD_X + 6, bird.y - 4, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Score
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 28px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(score, canvas.width / 2, 50);
+
+      // Overlays
+      if (state === 'start') {
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText('Click or press Space to start', canvas.width / 2, canvas.height / 2 - 40);
+      } else if (state === 'over') {
+        ctx.font = 'bold 32px "Segoe UI", sans-serif';
+        ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 50);
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText(`Score: ${score}   Best: ${best}`, canvas.width / 2, canvas.height / 2 - 10);
+        ctx.fillText('Click or press Space to restart', canvas.width / 2, canvas.height / 2 + 30);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    reset();
+    loop();
+  </script>
+</body>
+</html>
