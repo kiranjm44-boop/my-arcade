@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flappy Baby - Mini Arcade</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="game-body">
+  <a href="../index.html" class="back-link">← Back to games</a>
+  <canvas id="game" width="400" height="500"></canvas>
+  <p class="hint">Click or press Space to bounce. Grab bottles for bonus points! 🍼</p>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game constants
+    const GRAVITY = 0.5;
+    const FLAP = -8;
+    const GATE_WIDTH = 60;
+    const GATE_GAP = 170;
+    const GATE_SPACING = 220;
+    const GATE_SPEED = 2.5;
+    const BABY_X = 80;
+    const BABY_SIZE = 34; // emoji font size, used for hitbox too
+    const BABY_R = BABY_SIZE / 2;
+    const BOTTLE_R = 12;
+
+    // Game state
+    let baby, gates, bottles, score, best = 0;
+    let state = 'start'; // start → playing → over
+
+    function reset() {
+      baby = { y: canvas.height / 2, vy: 0 };
+      gates = [];
+      bottles = [];
+      score = 0;
+    }
+
+    function flap() {
+      if (state === 'start') {
+        state = 'playing';
+        reset();
+        baby.vy = FLAP;
+      } else if (state === 'playing') {
+        baby.vy = FLAP;
+      } else if (state === 'over') {
+        state = 'start';
+      }
+    }
+
+    canvas.addEventListener('click', flap);
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        flap();
+      }
+    });
+
+    function spawnGate() {
+      const gapY = 80 + Math.random() * (canvas.height - 160 - GATE_GAP);
+      gates.push({ x: canvas.width, gapY });
+      // Place a bottle in the middle of some gaps
+      if (Math.random() < 0.5) {
+        bottles.push({ x: canvas.width + GATE_WIDTH / 2, y: gapY + GATE_GAP / 2 });
+      }
+    }
+
+    function update() {
+      if (state !== 'playing') return;
+
+      // Baby physics
+      baby.vy += GRAVITY;
+      baby.y += baby.vy;
+
+      // Spawn gates
+      if (gates.length === 0 || gates[gates.length - 1].x < canvas.width - GATE_SPACING) {
+        spawnGate();
+      }
+
+      // Move gates + score
+      for (const gate of gates) {
+        gate.x -= GATE_SPEED;
+        if (!gate.scored && gate.x + GATE_WIDTH < BABY_X) {
+          gate.scored = true;
+          score++;
+        }
+      }
+      gates = gates.filter(g => g.x + GATE_WIDTH > 0);
+
+      // Move bottles + collect (bonus point)
+      for (const bottle of bottles) {
+        bottle.x -= GATE_SPEED;
+        const dx = bottle.x - BABY_X;
+        const dy = bottle.y - baby.y;
+        if (Math.hypot(dx, dy) < BABY_R + BOTTLE_R) {
+          bottle.collected = true;
+          score++;
+        }
+      }
+      bottles = bottles.filter(b => !b.collected && b.x + BOTTLE_R > 0);
+
+      // Collisions
+      const floor = canvas.height - BABY_R;
+      if (baby.y > floor || baby.y < BABY_R) return gameOver();
+      for (const gate of gates) {
+        const inX = BABY_X + BABY_R > gate.x && BABY_X - BABY_R < gate.x + GATE_WIDTH;
+        const inGap = baby.y - BABY_R > gate.gapY && baby.y + BABY_R < gate.gapY + GATE_GAP;
+        if (inX && !inGap) return gameOver();
+      }
+    }
+
+    function gameOver() {
+      state = 'over';
+      best = Math.max(best, score);
+    }
+
+    function draw() {
+      // Sky
+      ctx.fillStyle = '#0f3460';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Baby gates
+      ctx.fillStyle = '#e0b088';
+      for (const gate of gates) {
+        ctx.fillRect(gate.x, 0, GATE_WIDTH, gate.gapY);
+        ctx.fillRect(gate.x, gate.gapY + GATE_GAP, GATE_WIDTH, canvas.height - gate.gapY - GATE_GAP);
+      }
+
+      // Bottles
+      ctx.font = `${BOTTLE_R * 2}px "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const bottle of bottles) {
+        ctx.fillText('🍼', bottle.x, bottle.y);
+      }
+
+      // Baby
+      ctx.font = `${BABY_SIZE}px "Segoe UI", sans-serif`;
+      ctx.fillText('👶', BABY_X, baby.y);
+
+      // Score
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 28px "Segoe UI", sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(score, canvas.width / 2, 50);
+
+      // Overlays
+      if (state === 'start') {
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText('Click or press Space to start', canvas.width / 2, canvas.height / 2 - 40);
+      } else if (state === 'over') {
+        ctx.font = 'bold 32px "Segoe UI", sans-serif';
+        ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 50);
+        ctx.font = '20px "Segoe UI", sans-serif';
+        ctx.fillText(`Score: ${score}   Best: ${best}`, canvas.width / 2, canvas.height / 2 - 10);
+        ctx.fillText('Click or press Space to restart', canvas.width / 2, canvas.height / 2 + 30);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    reset();
+    loop();
+  </script>
+</body>
+</html>
